@@ -35,6 +35,12 @@ cscs codegen.cs -create-config=myappconfig.json
 cscs codegen.cs -config=myappconfig.json"
 ```
 
+- Generate code to a specific directory or file (if a file, the file must have the '.cs' extension)
+
+```
+cscs codegen.cs -namespace=MyApp -dialect=sqlserver2012 -connectionstring="Data Source=.\\sqlexpress;Initial Catalog=MyAppDB;Integrated Security=True" -output=.\generated-code\code.cs
+```
+
 
 
   

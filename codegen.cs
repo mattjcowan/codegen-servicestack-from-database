@@ -65,8 +65,8 @@ public class ScriptConfig
     [Display(Name = "dialect", Description = "Dialect for your database (sqlite, sqlserver, sqlserver2012, oracle, pgsql, mysql)", Order = 3)]
     public string Dialect { get; set; }
 
-    [Display(Name = "output", Description = "Directory to output generated files to", Order = 4)]
-    public string OutputDir { get; set; }
+    [Display(Name = "output", Description = "Directory or file to output code to. In case of a file, all the code will be output to that file (the directory in which the file is to be output must exist). In case of a directory, 3 files will be created: {Namespace}.Daos.cs, {Namespace}.ServiceTypes, and {Namespace}.Services (if the directory does not exist, it will be created)", Order = 4)]
+    public string Output { get; set; }
 
     [Display(Name = "namespace", Description = "Root namespace for the generated code", Order = 5)]
     public string Namespace { get; set; }
