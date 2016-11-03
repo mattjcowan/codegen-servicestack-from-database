@@ -10,7 +10,29 @@ Unzip the cs-script utility *.7z files inside the lib directory (or install the 
 Once you have either installed cs-script or unzipped it, you can run the '[codegen.cs](codegen.cs)' command from the command prompt:
 
 ```
-lib\cs-script\cscs.exe .\codegen.cs -help
+set CSSCRIPT_DIR=\lib\cs-script
+set path=%CSSCRIPT_DIR%;%path%
+cscs.exe codegen.cs -help
+```
+
+### sample commands
+
+- Generate code using a connection string and a database dialect
+
+```
+cscs codegen.cs -namespace=MyApp -dialect=sqlserver2012 -connectionstring="Data Source=.\\sqlexpress;Initial Catalog=MyAppDB;Integrated Security=True"
+```
+
+- Create a starter config file to customize the code generated output
+
+```
+cscs codegen.cs -create-config=myappconfig.json
+```
+
+- Generate code using a config file
+
+```
+cscs codegen.cs -config=myappconfig.json"
 ```
 
 
