@@ -10,7 +10,7 @@ Unzip the cs-script utility *.7z files inside the lib directory (or install the 
 Once you have either installed cs-script or unzipped it, you can run the '[codegen.cs](codegen.cs)' command from the command prompt:
 
 ```
-set CSSCRIPT_DIR=\lib\cs-script
+set CSSCRIPT_DIR=%cd%\lib\cs-script
 set path=%CSSCRIPT_DIR%;%path%
 cscs.exe codegen.cs -help
 ```
