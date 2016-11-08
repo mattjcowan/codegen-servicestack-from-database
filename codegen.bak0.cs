@@ -3,10 +3,6 @@
 //css_nuget -ng:"-Version 1.7.1" Handlebars.Net
 //css_nuget ServiceStack.Text
 //css_nuget JsonPrettyPrinter
-//css_nuget -ng:"-Version 6.9.9" MySql.Data
-//css_nuget -ng:"-Version 3.1.8" Npgsql
-//css_nuget -ng:"-Version 12.1.24160719" Oracle.ManagedDataAccess
-//css_nuget -ng:"-Version 1.0.103" System.Data.SQLite.Core
 //css_import templates\helpers.cs;
 
 using System;
@@ -28,6 +24,7 @@ using DescriptionAttribute = System.ComponentModel.DescriptionAttribute;
 
 class Script
 {
+
     const string CodeGenJsonFileName = "codegen.json";
 
     public static void Main(string[] args)
@@ -48,9 +45,21 @@ class Script
 
             var xdb = GetXDb(scriptArgs);
 
-            var outputDir = new DirectoryInfo(scriptArgs.OutputDir);
+            if (Path.GetExtension(scriptArgs.OutputDir) == ".json")
+            {
+                OutputJsonFile(xdb, scriptArgs);
+                Console.WriteLine("File " + scriptArgs.OutputDir + " created");
+            }
+            else
+            {
+                if (!Directory.Exists(scriptArgs.OutputDir))
+                {
+                    throw new ArgumentException("o",
+                        "The output flag must either be a *.json file, or an existing directory to dump the generated code into.");
+                }
 
-            OutputCode(scriptArgs, xdb, outputDir);
+                OutputCode(scriptArgs, xdb, new DirectoryInfo(scriptArgs.OutputDir));
+            }
         }
         catch (ApplicationException aex)
         {
@@ -68,58 +77,44 @@ class Script
 
     private static void OutputCode(ScriptArgs args, XDb xdb, DirectoryInfo outputDir)
     {
-        if (!Directory.Exists(args.Templates))
+        if (!Directory.Exists("templates"))
             return;
-
-        if (args.Mode == ModeType.Default || args.Mode.HasFlag(ModeType.Json))
-        {
-            var jsonFile = Path.Combine(outputDir.FullName, "Db.json");
-            Console.WriteLine("Generating JSON file: Db.json");
-
-            var json = ServiceStack.StringExtensions.ToJson(xdb);
-            json = JsonPrettyPrinterPlus.PrettyPrinterExtensions.PrettyPrintJson(json);
-            File.WriteAllText(jsonFile, json);
-
-            if (args.Mode == ModeType.Json) return; // we're done here
-        }
 
         Console.WriteLine("Generating code ...");
 
-        var codeGenData = new Dictionary<string, object>
+        var codeGenData = new CodeGenTemplate
         {
-            {"Namespace", args.Namespace},
-            {"Template", string.Empty},
-            {"Db", xdb}
+            Namespace = args.Namespace ?? "CodeGenerated",
+            Db = xdb,
+            Data =
+                Directory.GetFiles("templates", "*.json", SearchOption.AllDirectories)
+                    .Where(f => !f.EndsWith(CodeGenJsonFileName, true, CultureInfo.CurrentCulture))
+                    .ToDictionary(
+                        k => Path.GetFileNameWithoutExtension(k),
+                        v => ServiceStack.DynamicJson.Deserialize(File.ReadAllText(v)))
         };
 
-        foreach (var f in Directory.GetFiles(args.OutputDir, "*.json", SearchOption.AllDirectories)
-            .Where(f => !f.EndsWith(CodeGenJsonFileName, true, CultureInfo.CurrentCulture)))
+        if (args.OutputType == OutputType.Default || args.OutputType.HasFlag(OutputType.Json))
         {
-            var key = Path.GetFileNameWithoutExtension(f);
-
-            if (key == null || codeGenData.ContainsKey(key)) continue;
-            Console.WriteLine("Loading data file: " + key);
-
-            var data = ServiceStack.DynamicJson.Deserialize(File.ReadAllText(f));
-            codeGenData.Add(key, (object)data);
+            var json = ServiceStack.StringExtensions.ToJson(codeGenData);
+            json = JsonPrettyPrinterPlus.PrettyPrinterExtensions.PrettyPrintJson(json);
+            File.WriteAllText(Path.Combine(outputDir.FullName, CodeGenJsonFileName), json);
         }
 
-        if (args.Mode == ModeType.Default || args.Mode.HasFlag(ModeType.CSharp))
+        if (args.OutputType == OutputType.Default || args.OutputType.HasFlag(OutputType.CSharp))
         {
-            var allTemplateFiles = Directory.GetFiles(args.Templates, "*.hbs", SearchOption.AllDirectories);
+            var allTemplateFiles = Directory.GetFiles("templates", "*.hbs", SearchOption.AllDirectories);
 
             // REGISTER HELPERS
             HandlebarsUtils.Helpers.Init();
 
             // REGISTER PARTIAL TEMPLATES
-            foreach (var partialTemplateFile in allTemplateFiles)
+            foreach (var partialTemplateFile in allTemplateFiles.Where(atf => atf.StartsWith("_")))
             {
                 var partialFileNameWithoutExtension = Path.GetFileNameWithoutExtension(partialTemplateFile);
-
-                if (string.IsNullOrWhiteSpace(partialFileNameWithoutExtension) || !partialFileNameWithoutExtension.StartsWith("_")) continue;
+                if (string.IsNullOrWhiteSpace(partialFileNameWithoutExtension)) continue;
 
                 var partialName = partialFileNameWithoutExtension.Substring(1);
-
                 using (var reader = new StringReader(File.ReadAllText(partialTemplateFile)))
                 {
                     var partialTemplate = Handlebars.Compile(reader);
@@ -129,51 +124,69 @@ class Script
 
             // REGISTER TEMPLATES
             var templates = new Dictionary<string, Func<object, string>>();
-
-            foreach (var templateFile in allTemplateFiles)
+            foreach (var templateFile in allTemplateFiles.Where(atf => !atf.StartsWith("_")))
             {
                 var templateFileNameWithoutExtension = Path.GetFileNameWithoutExtension(templateFile);
-
-                if (string.IsNullOrWhiteSpace(templateFileNameWithoutExtension) || templateFileNameWithoutExtension.StartsWith("_")) continue;
+                if (string.IsNullOrWhiteSpace(templateFileNameWithoutExtension)) continue;
 
                 templates.Add(templateFileNameWithoutExtension, Handlebars.Compile(File.ReadAllText(templateFile)));
             }
 
             foreach (var template in templates)
             {
-                codeGenData["Template"] = template.Key;
-
+                codeGenData.Template = template.Key;
                 var result = template.Value(codeGenData);
-                File.WriteAllText(Path.Combine(outputDir.FullName, args.Namespace + "." + template.Key + ".cs"), result);
-
-                codeGenData["Template"] = string.Empty;
+                File.WriteAllText(Path.Combine(outputDir.FullName, template.Key + ".cs"), result);
             }
         }
+    }
+
+    public class CodeGenTemplate
+    {
+        public string Namespace { get; set; }
+        public string Template { get; set; }
+        public XDb Db { get; set; }
+        public Dictionary<string, dynamic> Data { get; set; }
     }
 
     public class ScriptArgs
     {
         [Required]
-        [Display(ShortName = "ns", Description = "The root namespace for the generated code (typically the name of your app)")]
+        [Display(ShortName = "n", Description = "The root namespace for the generated code (typically the name of your app)")]
         public string Namespace { get; set; }
 
         [Required]
-        [Display(ShortName = "connectionstring", Description = "The connection string to your database")]
+        [Display(ShortName = "c", Description = "The connection string to your database")]
         public string ConnectionString { get; set; }
 
         [Required]
-        [Display(ShortName = "dialect", Description = "The database dialect/type (eg: MySql, Oracle, PostgreSql, SQLite, SqlServer, SqlServerCe)")]
+        [Display(ShortName = "d", Description = "The database dialect/type (eg: Db2, MySql, Oracle, PostgreSql, SQLite, SqlServer, SqlServerCe)")]
         public SqlType Dialect { get; set; }
 
         [Required]
-        [Display(ShortName = "output", Description = "The directory to generate code in.")]
+        [Display(ShortName = "o", Description = "The directory to generate code in.")]
         public string OutputDir { get; set; }
+        
+        [Display(ShortName = "t", Description = "Restrict generated assets to: default, json, csharp.")]
+        public OutputType OutputType { get; set; }
+    }
 
-        [Display(ShortName = "templates", Description = "Restrict generated assets to: default, json, csharp.")]
-        public string Templates { get; set; }
+    private static void OutputJsonFile(XDb xdb, ScriptArgs scriptArgs)
+    {
+        var json = ServiceStack.StringExtensions.ToJson(xdb);
+        json = JsonPrettyPrinterPlus.PrettyPrinterExtensions.PrettyPrintJson(json);
+        if (!scriptArgs.Force && File.Exists(scriptArgs.OutputDir))
+        {
+            scriptArgs.OutputDir = Path.GetFileNameWithoutExtension(scriptArgs.OutputDir) + "_" +
+                                    DateTime.Now.ToString("u")
+                                        .Replace(" ", "")
+                                        .Replace(":", "")
+                                        .Replace("-", "");
+        }
+        var dir = Path.GetDirectoryName(scriptArgs.OutputDir);
 
-        [Display(ShortName = "mode", Description = "Restrict generated assets to: default, json, csharp.")]
-        public ModeType Mode { get; set; }
+        if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
+        File.WriteAllText(scriptArgs.OutputDir, json, Encoding.UTF8);
     }
 
     static XDb GetXDb(ScriptArgs scriptArgs)
@@ -421,8 +434,8 @@ class Script
         }
         return xdb;
     }
-
-    public enum ModeType : int
+    
+    public enum OutputType: int
     {
         Default = 0,
         Json = 1,
